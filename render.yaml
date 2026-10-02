@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: vivaio360
+    runtime: docker
+    plan: starter
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: DB_PATH
+        value: /app/data/vivaio360.sqlite
+      - key: ADMIN_USER
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+    disk:
+      name: vivaio360-data
+      mountPath: /app/data
+      sizeGB: 1

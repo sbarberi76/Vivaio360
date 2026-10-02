@@ -1,9 +1,26 @@
 import http from 'node:http';
+import { scryptSync, timingSafeEqual } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = dirname(fileURLToPath(import.meta.url));
+const adminUser = process.env.ADMIN_USER;
+const adminPassword = process.env.ADMIN_PASSWORD;
+if (Boolean(adminUser) !== Boolean(adminPassword)) throw Error('Configura sia ADMIN_USER sia ADMIN_PASSWORD.');
+if (adminPassword && (adminPassword.length < 16 || adminUser.includes(':'))) throw Error('Usa una password di almeno 16 caratteri e un utente senza due punti.');
+if (process.env.NODE_ENV === 'production' && !adminPassword) throw Error('In produzione sono obbligatori ADMIN_USER e ADMIN_PASSWORD.');
+const passwordHash = adminPassword ? scryptSync(adminPassword, 'vivaio360-login', 32) : null;
+function authorized(req) {
+ if (!passwordHash) return true;
+ const header = req.headers.authorization || '';
+ if (!header.startsWith('Basic ')) return false;
+ const credentials = Buffer.from(header.slice(6), 'base64').toString('utf8');
+ const separator = credentials.indexOf(':');
+ if (separator < 0) return false;
+ const hash = scryptSync(credentials.slice(separator + 1), 'vivaio360-login', 32);
+ return timingSafeEqual(hash, passwordHash) && credentials.slice(0, separator) === adminUser;
+} 
 const path = process.env.DB_PATH || resolve(root, 'data/vivaio360.sqlite');
 mkdirSync(dirname(path), { recursive: true });
 const db = new DatabaseSync(path);
@@ -21,9 +38,18 @@ const json = (res,status,data) => {res.writeHead(status,{'Content-Type':'applica
 export const server = http.createServer(async(req,res) => {
  try {
  const url = new URL(req.url,'http://localhost');
+ if (url.pathname === '/healthz' && req.method === 'GET') {
+  db.prepare('SELECT 1').get();return json(res,200,{ok:true});
+ }
+ if (!authorized(req)) {
+  res.writeHead(401, {'WWW-Authenticate':'Basic realm="Vivaio360", charset="UTF-8"','Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'});
+  return res.end('Accedi con le credenziali della scuola calcio.');
+ }
  if(url.pathname.startsWith('/api/')) {
  if(req.method==='GET' && url.pathname==='/api/state') return json(res,200,{teams:all('teams'),athletes:all('athletes'),sessions:all('sessions'),attendance:all('attendance'),fees:all('fees')});
  if(req.method!=='POST') return json(res,405,{error:'Metodo non consentito.'});
+ if (!req.headers['content-type']?.toLowerCase().startsWith('application/json')) return json(res,415,{error:'Usa application/json.'});
+ if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return json(res,403,{error:'Origine non consentita.'});
  let body='';for await (const chunk of req) {body+=chunk;if(body.length>16384) return json(res,413,{error:'Richiesta troppo grande.'});}
  const b=JSON.parse(body || '{}');
  switch(url.pathname) {

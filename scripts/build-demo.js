@@ -1,0 +1,15 @@
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+const root=resolve(import.meta.dirname,'..');
+const read=p=>readFileSync(resolve(root,p),'utf8');
+let html=read('public/index.html');
+html=html.replace('<link rel="stylesheet" href="/style.css">',()=>`<style>${read('public/style.css')}</style>`);
+html=html.replace('<script src="/app.js" defer></script>','');
+html=html.replace('<span class="badge">Il tuo vivaio, connesso</span>','<button id="reset-demo" type="button">Ripristina demo</button>');
+html=html.replace('<div id="content"></div>','<p class="demo-banner"><strong>DEMO · Dati inventati</strong> — Le modifiche restano in questo browser. Non inserire dati personali reali.</p><div id="content"></div>');
+html=html.replace('href="/"','href="./"');
+html=html.replace('</body>',()=>`<script>${read('public/demo-store.js')}</script><script>${read('public/app.js')}</script></body>`);
+mkdirSync(resolve(root,'dist'),{recursive:true});
+writeFileSync(resolve(root,'dist/index.html'),html);
+writeFileSync(resolve(root,'dist/.nojekyll'),'');
+console.log('Demo generata: dist/index.html (apribile anche senza server)');
